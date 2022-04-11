@@ -1,0 +1,102 @@
+#+PROPERTY: header-args:emacs-lisp :tangle ~/.emacs-profiles/shared.el
+#+PROPERTY: header-args: :mkdirp true 
+* shared.el
+** creates the emacs-profiles.el file which sets the available profiles for chemacs2
+#+begin_src emacs-lisp 
+(defun jtw/org--get-global-property(file-path property)
+(with-temp-buffer 
+(insert-file-contents profile-path)
+(setq pd (mapcar (lambda (x) (split-string x ":"))(cdr (car (org-collect-keywords '("PROPERTY") )))))
+(goto-char (point-max))
+(org-insert-heading)
+(insert (concat "temp" (string-join (cl-loop repeat 4 collect (number-to-string (random 1000))))))
+(org-insert-property-drawer)
+(setq ps (mapcar (lambda (x) (list (point) (car x) (string-join (cdr x) ":"))) pd))
+(mapc (lambda (x) (apply 'org-entry-put x)) ps) 
+(org-entry-get (point) property)))
+
+(defun jtw--get-profile-cons (profile-path) 
+ (jtw/org--get-global-property profile-path "profile")
+)
+
+(defun jtw/generate-emacs-profiles-el ()
+(let* ((dir "~/.org-data/dev/configs/emacs/profiles")
+(profile-paths  (mapcar (lambda (x) (concat dir "/" x))(cdr (cdr (directory-files (expand-file-name dir)))))))
+(with-temp-file 
+ (expand-file-name "~/.emacs-profiles.el") 
+ (insert (concat "(" (mapconcat 'jtw--get-profile-cons profile-paths "\n ") ")"))
+)))
+#+end_src
+** utility functions for capture templates
+#+begin_src emacs-lisp
+ (setq jtw/workout-start-date "2021-11-17")
+
+     (defun jtw/workout-tbl-align()
+       (when (string= (plist-get org-capture-plist :key) "w")
+       (with-current-buffer (find-file-noselect (expand-file-name "~/.org/s1/workout.org"))
+       (org-table-map-tables 'org-table-align))))
+
+     (add-hook 'org-capture-after-finalize-hook 'jtw/workout-tbl-align)
+
+   (defun jtw/workout-switch()
+   (let* ((buf (find-file-noselect (expand-file-name "~/.org/s1/workout.org")))
+          (pom (org-find-exact-headline-in-buffer "Notes" buf 'pos))
+          (switch (org-entry-get pom "ab_switch")))
+   (if (string= switch "t")
+          (progn (org-entry-put pom "ab_switch" "nil")(with-current-buffer buf (save-buffer)) "Workout B")(progn (org-entry-put pom "ab_switch" "t")(with-current-buffer buf (save-buffer)) "Workout A"))
+     )
+   )
+     (defun jtw/workout-selector()
+         (let ((workout
+                (jtw/workout-switch))
+               (buf (find-file-noselect (expand-file-name "~/.org/s1/workout.org"))))
+           (with-current-buffer buf
+     (goto-char (org-find-exact-headline-in-buffer workout buf 'pos))
+     (forward-line 2)
+     (goto-char (org-table-end)))))
+
+           (defun jtw/workout-table-line()
+                    (if (eq (% (org-time-stamp-to-now jtw/workout-start-date) 2) 0)
+               (let* ((workout "Workout A")
+                      (prompts '("squat" "bench-press" "barbell-row"))
+                      (e1 (read-string (concat "squat" ": ")))
+                      (e2 (read-string (concat "bench-press" ": ")))
+                      (e3 (read-string (concat "barbell-row" ": "))))
+                 (concat "|"  (format-time-string "%Y-%m-%d") "|" e1 "|" e2 "|" e3 "|"))
+             (let* ((workout "Workout B")
+                      (e1 (read-string (concat "squat" ": ")))
+                      (e2 (read-string (concat "overhead-press" ": ")))
+                      (e3 (read-string (concat "deadlift" ": "))))
+               (concat "|" (format-time-string "%Y-%m-%d") "|" e1 "|" e2 "|" e3 "|"))))
+#+end_src
+** org-mode config vars
+#+begin_src emacs-lisp
+(setq jtw/org-todo-keywords '((sequence "|"  "STORY(s)" "BACKLOG(b)")
+          (sequence "TODO(t)" "DOING(o!)" "|" "DONE(d!)")
+          (sequence "WAITING(w@/!)" "|" "DELEGATED(l@/!)" "DELAYED(a@/!)"  "DEAD(c!/@)")))
+
+(setq jtw/org-tag-alist '((:startgrouptag)
+         ("location")
+         (:grouptags)
+         ("@away" . ?A)
+         ("@home" . ?H)
+         ("@work" . ?W)
+         ("@univ" . ?U)
+         (:endgrouptag)
+         ("state")
+         (:grouptags)
+         ("idea" . ?i)
+         ("planning" . ?p)
+         ("next" . ?n)        
+         ("published" . ?u)
+         ("goal" . ?g)
+         (:endgrouptag)))
+
+(setq jtw/org-capture-templates '(("w" "workouts")("ww" "weights" plain (file+function "~/.org/s1/workout.org" jtw/workout-selector) "%(jtw/workout-table-line)" :immediate-finish t :jump-to-captured t)
+          ("wr" "cardio" table-line (file+headline "~/.org/s1/workout.org" "Cardio") "|%t|%^{activity?|walk|run|cycle}|%^{duration?|0}|%^{distance?|0}|" :immediate-finish t :jump-to-captured t)))
+#+end_src
+
+
+
+
+

@@ -1,0 +1,672 @@
+:PROPERTIES:
+:ab_switch: nil
+:END:
+#+PROPERTY: header-args:emacs-lisp :tangle ~/.emacs-profiles/old/init.el
+#+PROPERTY: header-args: :mkdirp true
+#+PROPERTY: profile: ("old" . ((user-emacs-directory . "~/.emacs-profiles/old")))
+[[https://www.youtube.com/channel/UCAiiOTio8Yu69c3XnR7nQBQ][System Crafters - YT]]
+[[https://github.com/daviwil/emacs-from-scratch][System Crafters - GH]]
+
+- Most of this file was directly following the above yt and gh tutorials.
+ 
+* Init File
+** Set the gnutls algorithm version to work with WSL2
+#+begin_src emacs-lisp
+(setq gnutls-algorithm-priority "NORMAL:-VERS-TLS1.3")
+
+#+end_src
+** Simplify gui
+Remove startup message, use visible bell (screen border flash) unless OSX. Remove all the init gui, and provide a min area for the minibuffer. 
+#+begin_src emacs-lisp
+(setq inhibit-startup-message t)
+(setq visible-bell t)                      
+(when (string-equal system-type "darwin") (setq visible-bell nil))
+(scroll-bar-mode -1)
+(tool-bar-mode -1)
+(tooltip-mode -1)
+(menu-bar-mode -1)
+(set-fringe-mode 10)
+
+;added this after org repo switched, otherwise init.el wont load
+(defun org-clocking-buffer (&rest _))
+#+end_src
+** Repo setup
+sets up the package "package" with various repo urls and initialization so that use-package can be used to install...packages.
+#+begin_src emacs-lisp
+  (require 'package)
+
+  (setq package-archives '(("melpa" . "https://melpa.org/packages/")
+                           ("elpa" . "https://elpa.gnu.org/packages/")
+                           ("org" . "https://orgmode.org/elpa/")
+                           ("melpa-stable" . "https://stable.melpa.org/packages/")))
+
+  (package-initialize)
+  (unless package-archive-contents (package-refresh-contents))
+
+  (setq package-list '(use-package all-the-icons))
+
+  (dolist (package package-list)
+    (unless (package-installed-p package)
+      (package-install package)))
+
+  (require 'use-package)
+  (setq use-package-always-ensure t)
+
+#+end_src
+** Global bindings and settings
+~keyboard-escape-quit~ is default bound to 'C-g', escape is intuitive. Sets up line numbers and excludes a list of modes. Sets emacs to show pairs of parens.
+- Note: may want to add package "general.el" here to make a custom spacemode
+ also disabled electric indent for all major modes.
+#+begin_src emacs-lisp
+        (global-set-key (kbd "<escape>") 'keyboard-escape-quit)
+
+        (setq user-full-name "Jon Watson")
+        (setq user-mail-address "self@jonwatson.dev") 
+
+        (show-paren-mode 1)
+  (add-hook 'after-change-major-mode-hook (lambda() (electric-indent-mode -1)))
+        (column-number-mode)
+        (global-display-line-numbers-mode t)
+        (dolist (mode '(org-mode-hook
+                        term-mode-hook
+                        shell-mode-hook
+                        eshell-mode-hook
+                          vterm-mode-hook
+                        treemacs-mode-hook
+                        pdf-view-mode-hook
+                        doc-view-mode-hook))
+          (add-hook mode (lambda () (display-line-numbers-mode 0))))
+
+      (setq backup-directory-alist
+                `(("." . ,temporary-file-directory)))
+          (setq auto-save-file-name-transforms
+                `(("." ,temporary-file-directory t)))
+
+    (pdf-tools-install)
+    (setq pdf-view-use-scaling t)
+    (add-hook 'pdf-view-mode-hook (lambda() (linum-mode -1)))
+(load "~/.emacs-profiles/shared.el")
+#+end_src
+* Packages
+**  Ivy and Counsel
+- Provide minibuff and fuzzy search service
+#+begin_src emacs-lisp
+(use-package ivy
+  :bind (("C-s" . swiper)
+         :map ivy-minibuffer-map
+         ("TAB" . ivy-alt-done)	
+         ("C-l" . ivy-alt-done)
+         ("C-j" . ivy-next-line)
+         ("C-k" . ivy-previous-line)
+
+	 :map ivy-switch-buffer-map
+         ("C-k" . ivy-previous-line)
+         ("C-l" . ivy-done)
+         ("C-d" . ivy-switch-buffer-kill)
+         :map ivy-reverse-i-search-map
+         ("C-k" . ivy-previous-line)
+         ("C-d" . ivy-reverse-i-search-kill))
+  :config
+  (ivy-mode 1))
+
+(use-package counsel
+  :bind (("M-x" . counsel-M-x)
+	 ("C-x b" . counsel-ibuffer)
+	 ("C-x C-f" . counsel-find-file)
+	 :map minibuffer-local-map
+	 ("C-r" . 'counsel-minibuffer-history)))
+
+(use-package ivy-rich
+  :init
+  (ivy-rich-mode 1))
+
+#+end_src
+**  Doom Themes and Modeline. Rainbow delimiters, evil block comment
+#+begin_src emacs-lisp
+(use-package doom-modeline
+  :init (doom-modeline-mode 1)
+  :custom ((doom-modeline-height 15)))
+
+(use-package doom-themes
+  :init (load-theme 'doom-tomorrow-night t)
+  )
+
+(use-package rainbow-delimiters
+  :hook (prog-mode . rainbow-delimiters-mode))
+
+(use-package evil-nerd-commenter
+  :bind ("M-/" . evilnc-comment-or-uncomment-lines)
+  )
+
+#+end_src
+** Helpful and Which-key
+- Helpful provides linked documentation and more. Whichkey provides a minibuffer help screen for incomplete commands
+- note: *C-h v* and *C-h f* map to ~describe-variable~ and ~describe-function~ that loads the helpful docs
+#+begin_src emacs-lisp
+(use-package which-key
+  :init (which-key-mode)
+  :diminish which-key-mode
+  :config
+  (setq which-key-idle-delay 1))
+
+(use-package helpful
+  :custom
+  (counsel-describe-function-function #'helpful-callable)
+  (counsel-describe-variable-function #'helpful-variable)
+  :bind
+  ([remap describe-function] . counsel-describe-function)
+  ([remap describe-command] . helpful-command)
+  ([remap describe-variable] . counsel-describe-variable)
+  ([remap describe-key] . helpful-key))
+
+#+end_src
+** Security
+GPG
+#+begin_src emacs-lisp
+(setq epg-pinentry-mode 'loopback)
+(require 'auth-source-pass)
+(auth-source-pass-enable)
+(setenv "GPG_AGENT_INFO" nil)
+
+#+end_src
+** Development packages
+*** Projectile
+project services
+#+begin_src emacs-lisp
+(use-package projectile
+  :diminish projectile-mode
+  :config (projectile-mode)
+  :custom ((projecile-completion-system 'ivy))
+  :bind-keymap
+  ("C-c p" . projectile-command-map)
+  :init
+  (when (file-directory-p "~/projects")
+    (setq projectile-project-search-path '("~/projects")))
+  (setq projectile-switch-project-action #'projectile-dired))
+
+(use-package counsel-projectile
+  :config (counsel-projectile-mode))
+
+#+end_src
+*** Magit
+git interface
+#+begin_src emacs-lisp
+(use-package magit)
+
+#+end_src
+*** Forge
+interaction with github
+- bitwarden user added to vault, username=watsonjt^forge with the auth-token for github
+#+begin_src emacs-lisp
+(use-package forge)
+
+#+end_src
+*** LSP
+note - in the lsp-mode hook, add each langauge
+#+begin_src emacs-lisp
+(defun jtw/lsp-mode-setup ()
+  (setq lsp-headerline-breadcrumbs-segments '(path-up-to-project file symbols))
+  (lsp-headerline-breadcrumb-mode))
+
+(use-package lsp-mode
+  :custom
+  (setq lsp-keymap-prefix "C-c l")
+    :hook ((typescript-mode . lsp-deferred)
+    (lsp-mode . jtw/lsp-mode-setup)
+    (lsp-mode . lsp-enable-which-key-integration))
+    :commands (lsp lsp-deferred))
+
+(use-package lsp-ui
+  :hook (lsp-mode . lsp-ui-mode)
+  :custom
+  (lsp-ui-doc-position 'bottom)
+  :commands lsp-ui-mode
+  )
+
+(use-package lsp-ivy)
+(use-package lsp-treemacs :after lsp)
+
+(use-package which-key
+    :config
+    (which-key-mode))
+
+#+end_src
+*** DAP
+#+begin_src emacs-lisp
+  (use-package dap-mode)
+  (setq dap-auto-configure-features '(sessions locals controls tooltip))
+  (require 'dap-gdb-lldb)
+  (dap-gdb-lldb-setup)
+  (dap-register-debug-template "Rust::GDB Run Configuration"
+                                 (list :type "gdb"
+                                       :request "launch"
+                                       :name "GDB::Run"
+				      :environment-variables '(("RUST_BACKTRACE" . "1"))
+                               :gdbpath (expand-file-name "~/.cargo/bin/rust-gdb")
+                                       :target "${workspaceFolder}/target/debug/${workspaceFolderBasename}"
+                                       :cwd "${workspaceFolder}"))
+
+#+end_src
+*** Completion
+<enter>/<Ret> is default bind for completion, this sets it to <tab>
+#+begin_src emacs-lisp
+(use-package company
+  :after lsp-mode
+  :hook (lsp-mode . company-mode)
+  :bind (:map company-active-map
+         ("<tab>" . company-complete-selection))
+        (:map lsp-mode-map
+         ("<tab>" . company-indent-or-complete-common))
+  :custom
+  (company-minimum-prefix-length 1)
+  (company-idle-delay 0.0))
+
+(use-package company-box
+  :hook (company-mode . company-box-mode))
+
+#+end_src
+*** Comment region
+#+begin_src emacs-lisp
+(use-package evil-nerd-commenter
+  :bind ("M-/" . evilnc-comment-or-uncomment-lines)
+  )
+#+end_src
+** Language Packages
+*** Typescript
+#+begin_src emacs-lisp
+(use-package typescript-mode
+  :mode "\\.ts\\'"
+  :hook (typescript-mode . lsp)
+  :config
+  (setq typescript-indent-level 2)
+  (require 'dap-node)
+  (dap-node-setup))
+
+#+end_src
+*** Rust
+#+begin_src emacs-lisp
+(use-package flycheck-rust)
+(use-package rustic)
+
+#+end_src
+*** C++
+#+begin_src elisp
+(use-package ccls
+:custom
+(setq ccls-executable "/usr/local/bin/ccls"))
+#+end_src
+*** Python
+#+begin_src emacs-lisp
+(use-package lsp-python-ms
+  :ensure t
+  :init (setq lsp-python-ms-auto-install-server t)
+  :hook (python-mode . (lambda ()
+                          (require 'lsp-python-ms)
+                          (lsp))))
+#+end_src
+*** Dhall
+#+begin_src emacs-lisp
+(use-package dhall-mode
+  :ensure t
+  :mode "\\.dhall\\'")
+#+end_src
+*** Guile
+#+begin_src emacs-lisp
+  (use-package geiser
+    :ensure t
+    :defer t
+    :defines geiser-guile-binary
+    :functions geiser-impl--set-buffer-implementation
+    :commands (geiser run-geiser)
+    :config
+    ;; Send the argument of `run-geiser' to
+    ;; `geiser-impl--set-buffer-implementation' BEFORE `run-geiser' is
+    ;; ran. As I had to set the Scheme implementation by hand otherwise
+    ;; with `geiser-set-scheme'
+    (advice-add 'run-geiser :before #'geiser-impl--set-buffer-implementation)
+(setq geiser-default-implementation 'guile)
+(setq geiser-guile-binary "/usr/bin/guile")) ; Use the latest guile
+#+end_src
+** Orgmode
+*** Utility functions
+#+begin_src emacs-lisp
+
+     (setq jtw/workout-start-date "2021-11-17")
+
+     (defun jtw/workout-tbl-align()
+       (when (string= (plist-get org-capture-plist :key) "w")
+       (with-current-buffer (find-file-noselect (expand-file-name "~/.org/s1/workout.org"))
+       (org-table-map-tables 'org-table-align))))
+
+     (add-hook 'org-capture-after-finalize-hook 'jtw/workout-tbl-align)
+
+   (defun jtw/workout-switch()
+   (let* ((buf (find-file-noselect (expand-file-name "~/.org/s1/workout.org")))
+          (pom (org-find-exact-headline-in-buffer "Notes" buf 'pos))
+          (switch (org-entry-get pom "ab_switch")))
+   (if (string= switch "t")
+          (progn (org-entry-put pom "ab_switch" "nil")(with-current-buffer buf (save-buffer)) "Workout B")(progn (org-entry-put pom "ab_switch" "t")(with-current-buffer buf (save-buffer)) "Workout A"))
+     )
+   )
+     (defun jtw/workout-selector()
+         (let ((workout
+                (jtw/workout-switch))
+               (buf (find-file-noselect (expand-file-name "~/.org/s1/workout.org"))))
+           (with-current-buffer buf
+     (goto-char (org-find-exact-headline-in-buffer workout buf 'pos))
+     (forward-line 2)
+     (goto-char (org-table-end)))))
+
+           (defun jtw/workout-table-line()
+                    (if (eq (% (org-time-stamp-to-now jtw/workout-start-date) 2) 0)
+               (let* ((workout "Workout A")
+                      (prompts '("squat" "bench-press" "barbell-row"))
+                      (e1 (read-string (concat "squat" ": ")))
+                      (e2 (read-string (concat "bench-press" ": ")))
+                      (e3 (read-string (concat "barbell-row" ": "))))
+                 (concat "|"  (format-time-string "%Y-%m-%d") "|" e1 "|" e2 "|" e3 "|"))
+             (let* ((workout "Workout B")
+                      (e1 (read-string (concat "squat" ": ")))
+                      (e2 (read-string (concat "overhead-press" ": ")))
+                      (e3 (read-string (concat "deadlift" ": "))))
+               (concat "|" (format-time-string "%Y-%m-%d") "|" e1 "|" e2 "|" e3 "|"))))
+
+                (defun jtw/org-mode-setup ()
+                  (org-indent-mode)
+                  (variable-pitch-mode 1)
+                  (auto-fill-mode 0)
+                  (visual-line-mode 1))
+
+                (defun jtw/org-font-setup ()
+                  (font-lock-add-keywords 'org-mode
+                                          '(("^ *\\([-]\\) "
+                                             (0 (prog1 () (compose-region (match-beginning 1) (match-end 1) ""))))))
+
+                  (dolist (face '((org-level-1 . 1.2)
+                                  (org-level-2 . 1.1)
+                                  (org-level-3 . 1.05)
+                                  (org-level-4 . 1.0)
+                                  (org-level-5 . 1.1)
+                                  (org-level-6 . 1.1)
+                                  (org-level-7 . 1.1)
+                                  (org-level-8 . 1.1)))
+                    (set-face-attribute (car face) nil :font "Cantarell" :weight 'regular :height (cdr face)))
+
+
+                  (set-face-attribute 'org-block nil :foreground nil :inherit 'fixed-pitch)
+                  (set-face-attribute 'org-code nil   :inherit '(shadow fixed-pitch))
+                  (set-face-attribute 'org-table nil   :inherit '(shadow fixed-pitch))
+                  (set-face-attribute 'org-verbatim nil :inherit '(shadow fixed-pitch))
+                  (set-face-attribute 'org-special-keyword nil :inherit '(font-lock-comment-face fixed-pitch))
+                  (set-face-attribute 'org-meta-line nil :inherit '(font-lock-comment-face fixed-pitch))
+                  (set-face-attribute 'org-checkbox nil :inherit 'fixed-pitch))
+
+                (defun jtw/org-mode-visual-fill()
+                  (setq visual-fill-column-width 80)
+                  (visual-fill-column-mode 1))
+
+                (defun jtw/org-find-heading-in-datetree ()
+                  (org-datetree-find-date-create (calendar-current-date))
+                  (goto-char (point-at-eol))
+                  (when (not (re-search-forward
+                              (format org-complex-heading-regexp-format
+                                      (regexp-quote "LOG")) nil t))
+                    (insert "\n**** LOG\n"))
+                  (goto-char (point-max)))
+
+#+end_src
+
+*** Org Setup
+- Sets agenda files, todo keywords, default tags, capture templates, capture refile locations, and some formatting and view styles.
+#+begin_src emacs-lisp
+  (use-package org
+    :hook (org-mode . org-modern-mode)
+    :bind (("C-c c c" . org-capture))
+    :config
+    (setq org-ellipsis " ▾")
+    (setq org-agenda-start-with-log-mode t)
+    (setq org-log-done 'time)
+    (setq org-log-into-drawer t)
+
+    (require 'org-habit)
+    (add-to-list 'org-modules 'org-habit)
+    (setq org-habit-graph-column 60)
+
+    (setq org-hide-emphasis-markers t)
+    (setq org-src-preserve-indentation t)
+    (jtw/org-font-setup)
+
+    (setq org-todo-keywords
+        '(
+          (sequence "|"  "STORY(s)" "BACKLOG(b)")
+          (sequence "TODO(t)" "DOING(o!)" "|" "DONE(d!)")
+          (sequence "WAITING(w@/!)" "|" "DELEGATED(l@/!)" "DELAYED(a@/!)"  "DEAD(c!/@)")
+          ))
+    (setq org-tag-alist
+      '((:startgrouptag)
+         ("location")
+         (:grouptags)
+         ("@away" . ?A)
+         ("@home" . ?H)
+         ("@work" . ?W)
+         ("@univ" . ?U)
+         (:endgrouptag)
+         ("agenda" . ?a)
+         ("planning" . ?p)
+         ("publish" . ?P)
+         ("goal" . ?g)
+         ("note" . ?n)
+         ("idea" . ?i)))
+   (setq org-refile-use-outline-path t)
+   (setq org-refile-targets
+      '(("~/.org/archive.org" :maxlevel . 1)))
+    (advice-add 'org-refile :after 'org-save-all-org-buffers)
+
+   (setq org-capture-templates
+         '(
+           ("t" "task" entry (file "~/.org/tasks.org")
+           "***** TODO %?" :empty-lines 1)
+           ("l" "daily log" plain (file+function "~/.org/daily.org" jtw/org-find-heading-in-datetree)
+            "- %T - %?")
+           ("n" "note" entry (file "~/.org/notes.org")
+            "* %? %t")
+           ("w" "workout" plain (file+function "~/.org/s1/workout.org" jtw/workout-selector) "%(jtw/workout-table-line)" :immediate-finish t :jump-to-captured t)
+          ("r" "cardio" table-line (file+headline "~/.org/s1/workout.org" "Cardio") "|%t|%^{activity?|walk|run|cycle}|%^{duration?|0}|%^{distance?|0}|" :immediate-finish t :jump-to-captured t)
+          )))
+
+  (use-package visual-fill-column
+    :hook (org-mode . jtw/org-mode-visual-fill))
+
+  (use-package org-bullets
+    :unless (string= window-system nil)
+    :after org
+    :hook (org-mode . org-bullets-mode)
+    :custom
+    (org-bullets-bullet-list '("◉" "○" "●" "○" "●" "○" "●")))
+
+#+end_src
+*** Org-Babel
+- org-tempo is needed as of Org 9.2
+- The function tangles our /emacs.org/ file on save
+- Note - for each langauge add to the languages list.
+#+begin_src emacs-lisp
+       (setq org-confirm-babel-evaluate nil)
+       (setq image-use-external-converter t)
+       (org-babel-do-load-languages
+         'org-babel-load-languages
+         '((emacs-lisp . t)
+           (shell . t)
+           (typescript . t)
+           (python . t)
+           (rust . t)
+           (C . t) ;;this enables c, C++, D
+           (scheme . t)
+           (gnuplot . t)
+           (sagemath . t)))
+
+       (push '("conf-unix" . conf-unix) org-src-lang-modes)
+
+       ;; This is needed as of Org 9.2
+       (require 'org-tempo)
+
+       (add-to-list 'org-structure-template-alist '("sh" . "src shell"))
+       (add-to-list 'org-structure-template-alist '("el" . "src emacs-lisp"))
+       (add-to-list 'org-structure-template-alist '("ty" . "src typescript"))
+       (add-to-list 'org-structure-template-alist '("py" . "src python"))
+       (add-to-list 'org-structure-template-alist '("rs" . "src rust"))
+       (add-to-list 'org-structure-template-alist '("gp" . "src gnuplot"))
+       (add-to-list 'org-structure-template-alist '("sm" . "src sage"))
+       (add-to-list 'org-structure-template-alist '("sc" . "src scheme"))
+       ;;auto-reload emacs conf
+       ;; (defun jtw/org-babel-tangle-config ()
+       ;;   (when (string-equal (buffer-file-name)
+       ;;                       (expand-file-name "~/.org-data/dev/configs/emacs.org"))
+       ;;     (let ((org-confirm-babel-evaluate nil))
+       ;;       (org-babel-tangle))))
+
+       ;; (add-hook 'org-mode-hook (lambda () (add-hook 'after-save-hook #'jtw/org-babel-tangle-config)))
+
+#+end_src
+#+BEGIN_COMMENT
+*** Org-Roam
+- Install org-noter
+#+begin_src emacs-lisp
+  (add-to-list 'auto-mode-alist '("\\.epub\\'" . nov-mode))
+  (setq nov-text-width 80)
+
+  (use-package org-roam
+   :ensure t
+   :after org
+   :init
+   (setq org-roam-v2-ack t)
+   :hook
+   (after-init . org-roam-db-autosync-mode)
+   :custom
+   (org-roam-directory "~/.org-data/ztl")
+   (org-roam-capture-templates '(
+        ("d" "default" plain "%?" :target
+  (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
+  :unnarrowed t)))
+   :bind (:map org-roam-db-autosync-mode
+                (("C-c n l" . org-roam)
+                 ("C-c n f" . org-roam-find-file)
+                 ("C-c n g" . org-roam-graph)
+                 ("C-c n c" . org-roam-capture))
+                :map org-mode-map
+                (("C-c n i" . org-roam-insert))
+                (("C-c n I" . org-roam-insert-immediate))))
+
+(add-to-list 'display-buffer-alist
+             '("\\*org-roam\\*"
+               (display-buffer-in-direction)
+               (direction . right)
+               (window-width . 0.33)
+               (window-height . fit-window-to-buffer)))
+
+#+end_src
+*** Org-Noter
+#+begin_src emacs-lisp
+(use-package org-noter
+  :ensure t
+  :after org
+  :custom
+  (org-noter-notes-search-path (list "~/.org-data/lib/notes"))
+  (org-noter-auto-save-last-location t)
+  (org-noter-default-notes-file-names (list "notes.org"))
+  (require 'org-noter-pdftools))
+
+(use-package org-pdftools
+  :hook (org-mode . org-pdftools-setup-link))
+
+(use-package org-noter-pdftools
+  :after org-noter
+  :config
+  ;; Add a function to ensure precise note is inserted
+  (defun org-noter-pdftools-insert-precise-note (&optional toggle-no-questions)
+    (interactive "P")
+    (org-noter--with-valid-session
+     (let ((org-noter-insert-note-no-questions (if toggle-no-questions
+                                                   (not org-noter-insert-note-no-questions)
+                                                 org-noter-insert-note-no-questions))
+           (org-pdftools-use-isearch-link t)
+           (org-pdftools-use-freestyle-annot t))
+       (org-noter-insert-note (org-noter--get-precise-info)))))
+
+  ;; fix https://github.com/weirdNox/org-noter/pull/93/commits/f8349ae7575e599f375de1be6be2d0d5de4e6cbf
+  (defun org-noter-set-start-location (&optional arg)
+    "When opening a session with this document, go to the current location.
+With a prefix ARG, remove start location."
+    (interactive "P")
+    (org-noter--with-valid-session
+     (let ((inhibit-read-only t)
+           (ast (org-noter--parse-root))
+           (location (org-noter--doc-approx-location (when (called-interactively-p 'any) 'interactive))))
+       (with-current-buffer (org-noter--session-notes-buffer session)
+         (org-with-wide-buffer
+          (goto-char (org-element-property :begin ast))
+          (if arg
+              (org-entry-delete nil org-noter-property-note-location)
+            (org-entry-put nil org-noter-property-note-location
+                           (org-noter--pretty-print-location location))))))))
+  (with-eval-after-load 'pdf-annot
+    (add-hook 'pdf-annot-activate-handler-functions #'org-noter-pdftools-jump-to-note)))
+
+#+end_src
+*** Org-Ref
+#+begin_src emacs-lisp
+(use-package org-ref
+ :ensure t
+ :after org
+ :init
+ (setq reftex-default-bibliography '("~/lib/default.bib"))
+ (setq org-ref-default-bibliography '("~/lib/default.bib"))
+ (setq org-ref-pdf-directory '("~/lib"))
+ :custom
+ (org-latex-pdf-process
+      '("pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
+	"bibtex %b"
+	"pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
+	"pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"))
+  (org-latex-logfiles-extensions (quote ("lof" "lot" "tex" "aux" "idx" "log" "out" "toc" "nav" "snm" "vrb" "dvi" "fdb_latexmk" "blg" "brf" "fls" "entoc" "ps" "spl" "bbl" "pygtex" "pygstyle"))))
+ 
+#+end_src
+#+END_COMMENT
+** Terminal Emulators
+*** vterm
+vterm does not work on windows, it will work using WSL2.
+vterm will be compiled on first use, and is typically faster and closer to a normal terminal
+#+begin_src emacs-lisp
+(unless (string= system-type "windows-nt") (use-package vterm
+   :commands vterm
+   :config
+   (setq vterm-max-scrollback 10000)))
+
+#+end_src
+*** eshell
+terminal emulated in elisp.
+prefer this shell because it works in all environments
+note - add any shell commands which modify their buffers to the visual command list
+#+begin_src emacs-lisp
+(defun efs/configure-eshell ()
+  (add-hook 'eshell-pre-command-hook 'eshell-save-some-history)
+  (add-to-list 'eshell-output-filter-functions 'eshell-truncate-buffer)
+  (setq eshell-history-size         10000
+        eshell-buffer-maximum-lines 10000
+        eshell-hist-ignoredups t
+        eshell-scroll-to-bottom-on-input t))
+
+(use-package eshell-git-prompt)
+
+(use-package eshell
+  :hook (eshell-first-time-mode . efs/configure-eshell)
+  :config
+  (with-eval-after-load 'esh-opt
+    (setq eshell-destroy-buffer-when-process-dies t)
+    (setq eshell-visual-commands '("htop" "zsh" "less")))
+  (eshell-git-prompt-use-theme 'powerline))
+
+#+end_src
+* Notes
+** Need to output to stdout?
+ - (print "stdout text here" #'external-debugging-output)
+  

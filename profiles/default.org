@@ -1,0 +1,643 @@
+:PROPERTIES:
+:ab_switch: nil
+:END:
+#+PROPERTY: header-args: :mkdirp true
+#+PROPERTY: profile: ("default" . ((user-emacs-directory . "~/.emacs-profiles/default")))
+
+This is a combination of the old and new packages, until I can config straight.el to stop building on every start in windows, this will have to do.
+ 
+* Early Init File
+:PROPERTIES:
+:header-args:emacs-lisp: :tangle ~/.emacs-profiles/default/early-init.el :mkdirp true
+:END:
+disable package.el, using straight.el
+#+begin_src emacs-lisp
+(setq package-enable-at-startup nil)
+(setq gnutls-algorithm-priority "NORMAL:-VERS-TLS1.3")
+(setq warning-minimum-level :error)
+#+end_src
+* Init File
+:PROPERTIES:
+:header-args:emacs-lisp: :tangle ~/.emacs-profiles/default/init.el :mkdirp true
+:END:
+** Simplify gui
+Remove startup message, use visible bell (screen border flash) unless OSX. Remove all the init gui, and provide a min area for the minibuffer. 
+#+begin_src emacs-lisp
+(setq inhibit-startup-message t)
+(setq visible-bell t)                      
+(when (string-equal system-type "darwin") (setq visible-bell nil))
+(scroll-bar-mode -1)
+(tool-bar-mode -1)
+(tooltip-mode -1)
+(menu-bar-mode -1)
+(set-fringe-mode 10)
+
+;added this after org repo switched, otherwise init.el wont load
+(defun org-clocking-buffer (&rest _))
+#+end_src
+** Repo setup
+sets up the package "package" with various repo urls and initialization so that use-package can be used to install...packages.
+#+begin_src emacs-lisp
+  (require 'package)
+
+  (setq package-archives '(("melpa" . "https://melpa.org/packages/")
+                           ("elpa" . "https://elpa.gnu.org/packages/")
+                           ("org" . "https://orgmode.org/elpa/")
+                           ("melpa-stable" . "https://stable.melpa.org/packages/")))
+
+  (package-initialize)
+  (unless package-archive-contents (package-refresh-contents))
+
+  (setq package-list '(use-package all-the-icons))
+
+  (dolist (package package-list)
+    (unless (package-installed-p package)
+      (package-install package)))
+
+  (require 'use-package)
+  (setq use-package-always-ensure t)
+
+#+end_src
+** Global bindings and setting
+#+begin_src emacs-lisp
+        (global-set-key (kbd "<escape>") 'keyboard-escape-quit)
+
+        (setq user-full-name "Jon Watson")
+        (setq user-mail-address "self@jonwatson.dev") 
+
+        (show-paren-mode 1)
+  (add-hook 'after-change-major-mode-hook (lambda() (electric-indent-mode -1)))
+        (column-number-mode)
+        (global-display-line-numbers-mode t)
+        (dolist (mode '(org-mode-hook
+                        term-mode-hook
+                        shell-mode-hook
+                        eshell-mode-hook
+                          vterm-mode-hook
+                        treemacs-mode-hook
+                        pdf-view-mode-hook
+                        doc-view-mode-hook))
+          (add-hook mode (lambda () (display-line-numbers-mode -1))))
+
+(dolist (mode '(org-mode-hook
+                prog-mode-hook))
+(add-hook mode (lambda () (display-fill-column-indicator-mode))))
+  
+      (setq backup-directory-alist
+                `(("." . ,temporary-file-directory)))
+          (setq auto-save-file-name-transforms
+                `(("." ,temporary-file-directory t)))
+
+    (pdf-tools-install)
+    (setq pdf-view-use-scaling t)
+    (add-hook 'pdf-view-mode-hook (lambda() (linum-mode -1)))
+(load "~/.emacs-profiles/shared.el")
+#+end_src
+** Theme
+#+begin_src emacs-lisp
+(set-face-attribute 'default nil :height 120)
+(use-package solaire-mode
+  :config
+  (solaire-global-mode +1))
+
+(use-package vscode-dark-plus-theme
+  :config
+  (load-theme 'vscode-dark-plus t))
+
+(use-package evil-nerd-commenter
+  :bind ("M-/" . evilnc-comment-or-uncomment-lines))
+#+end_src
+** Packages
+*** vertico
+manages minibuffer UI
+#+begin_src emacs-lisp
+(use-package vertico
+  :init
+  (setq read-file-name-completion-ignore-case t
+      read-buffer-completion-ignore-case t
+      completion-ignore-case t)
+  (vertico-mode)
+  
+  ;; Different scroll margin
+  ;; (setq vertico-scroll-margin 0)
+
+  ;; Show more candidates
+  ;; (setq vertico-count 20)
+
+  ;; Grow and shrink the Vertico minibuffer
+  ;; (setq vertico-resize t)
+
+  ;; Optionally enable cycling for `vertico-next' and `vertico-previous'.
+  ;; (setq vertico-cycle t)
+  )
+#+end_src
+*** orderless
+completion style for minibuffer
+#+begin_src emacs-lisp
+(use-package orderless
+  :init
+  ;; Configure a custom style dispatcher (see the Consult wiki)
+  ;; (setq orderless-style-dispatchers '(+orderless-dispatch)
+  ;;       orderless-component-separator #'orderless-escapable-split-on-space)
+  (setq completion-styles '(orderless)
+        completion-category-defaults nil
+        completion-category-overrides '((file (styles partial-completion)))))
+#+end_src
+*** marginalia
+annotations
+#+begin_src emacs-lisp
+(use-package marginalia
+  ;; Either bind `marginalia-cycle` globally or only in the minibuffer
+  :bind (("M-A" . marginalia-cycle)
+         :map minibuffer-local-map
+         ("M-A" . marginalia-cycle))
+
+  ;; The :init configuration is always executed (Not lazy!)
+  :init
+
+  ;; Must be in the :init section of use-package such that the mode gets
+  ;; enabled right away. Note that this forces loading the package.
+  (marginalia-mode))
+#+end_src
+*** consult
+suggestions based on completions...
+#+begin_src emacs-lisp
+(use-package consult
+  ;; Replace bindings. Lazily loaded due by `use-package'.
+  :bind (;; C-c bindings (mode-specific-map)
+         ("C-c h" . consult-history)
+         ("C-c m" . consult-mode-command)
+         ("C-c k" . consult-kmacro)
+         ;; C-x bindings (ctl-x-map)
+         ("C-x M-:" . consult-complex-command)     ;; orig. repeat-complex-command
+         ("C-x b" . consult-buffer)                ;; orig. switch-to-buffer
+         ("C-x 4 b" . consult-buffer-other-window) ;; orig. switch-to-buffer-other-window
+         ("C-x 5 b" . consult-buffer-other-frame)  ;; orig. switch-to-buffer-other-frame
+         ("C-x r b" . consult-bookmark)            ;; orig. bookmark-jump
+         ("C-x p b" . consult-project-buffer)      ;; orig. project-switch-to-buffer
+         ;; Custom M-# bindings for fast register access
+         ("M-#" . consult-register-load)
+         ("M-'" . consult-register-store)          ;; orig. abbrev-prefix-mark (unrelated)
+         ("C-M-#" . consult-register)
+         ;; Other custom bindings
+         ("M-y" . consult-yank-pop)                ;; orig. yank-pop
+         ("<help> a" . consult-apropos)            ;; orig. apropos-command
+         ;; M-g bindings (goto-map)
+         ("M-g e" . consult-compile-error)
+         ("M-g f" . consult-flymake)               ;; Alternative: consult-flycheck
+         ("M-g g" . consult-goto-line)             ;; orig. goto-line
+         ("M-g M-g" . consult-goto-line)           ;; orig. goto-line
+         ("M-g o" . consult-outline)               ;; Alternative: consult-org-heading
+         ("M-g m" . consult-mark)
+         ("M-g k" . consult-global-mark)
+         ("M-g i" . consult-imenu)
+         ("M-g I" . consult-imenu-multi)
+         ;; M-s bindings (search-map)
+         ("M-s d" . consult-find)
+         ("M-s D" . consult-locate)
+         ("M-s g" . consult-grep)
+         ("M-s G" . consult-git-grep)
+         ("M-s r" . consult-ripgrep)
+         ("M-s l" . consult-line)
+         ("M-s L" . consult-line-multi)
+         ("M-s m" . consult-multi-occur)
+         ("M-s k" . consult-keep-lines)
+         ("M-s u" . consult-focus-lines)
+         ;; Isearch integration
+         ("M-s e" . consult-isearch-history)
+         :map isearch-mode-map
+         ("M-e" . consult-isearch-history)         ;; orig. isearch-edit-string
+         ("M-s e" . consult-isearch-history)       ;; orig. isearch-edit-string
+         ("M-s l" . consult-line)                  ;; needed by consult-line to detect isearch
+         ("M-s L" . consult-line-multi))           ;; needed by consult-line to detect isearch
+
+  ;; Enable automatic preview at point in the *Completions* buffer. This is
+  ;; relevant when you use the default completion UI.
+  :hook (completion-list-mode . consult-preview-at-point-mode)
+
+  ;; The :init configuration is always executed (Not lazy)
+  :init
+
+  ;; Optionally configure the register formatting. This improves the register
+  ;; preview for `consult-register', `consult-register-load',
+  ;; `consult-register-store' and the Emacs built-ins.
+  (setq register-preview-delay 0.5
+        register-preview-function #'consult-register-format)
+
+  ;; Optionally tweak the register preview window.
+  ;; This adds thin lines, sorting and hides the mode line of the window.
+  (advice-add #'register-preview :override #'consult-register-window)
+
+  ;; Optionally replace `completing-read-multiple' with an enhanced version.
+  (advice-add #'completing-read-multiple :override #'consult-completing-read-multiple)
+
+  ;; Use Consult to select xref locations with preview
+  (setq xref-show-xrefs-function #'consult-xref
+        xref-show-definitions-function #'consult-xref)
+
+  ;; Configure other variables and modes in the :config section,
+  ;; after lazily loading the package.
+  :config
+
+  ;; Optionally configure preview. The default value
+  ;; is 'any, such that any key triggers the preview.
+  ;; (setq consult-preview-key 'any)
+  ;; (setq consult-preview-key (kbd "M-."))
+  ;; (setq consult-preview-key (list (kbd "<S-down>") (kbd "<S-up>")))
+  ;; For some commands and buffer sources it is useful to configure the
+  ;; :preview-key on a per-command basis using the `consult-customize' macro.
+  (consult-customize
+   consult-theme
+   :preview-key '(:debounce 0.2 any)
+   consult-ripgrep consult-git-grep consult-grep
+   consult-bookmark consult-recent-file consult-xref
+   consult--source-bookmark consult--source-recent-file
+   consult--source-project-recent-file
+   :preview-key (kbd "M-."))
+
+  ;; Optionally configure the narrowing key.
+  ;; Both < and C-+ work reasonably well.
+  (setq consult-narrow-key "<") ;; (kbd "C-+")
+
+  ;; Optionally make narrowing help available in the minibuffer.
+  ;; You may want to use `embark-prefix-help-command' or which-key instead.
+  ;; (define-key consult-narrow-map (vconcat consult-narrow-key "?") #'consult-narrow-help)
+
+  ;; By default `consult-project-function' uses `project-root' from project.el.
+  ;; Optionally configure a different project root function.
+  ;; There are multiple reasonable alternatives to chose from.
+  ;;;; 1. project.el (the default)
+  ;; (setq consult-project-function #'consult--default-project--function)
+  ;;;; 2. projectile.el (projectile-project-root)
+  ;; (autoload 'projectile-project-root "projectile")
+  ;; (setq consult-project-function (lambda (_) (projectile-project-root)))
+  ;;;; 3. vc.el (vc-root-dir)
+  ;; (setq consult-project-function (lambda (_) (vc-root-dir)))
+  ;;;; 4. locate-dominating-file
+  ;; (setq consult-project-function (lambda (_) (locate-dominating-file "." ".git")))
+)
+#+end_src
+*** embark
+context aware suggestions (context menus for emacs). Reverse order object->action action->object
+#+begin_src emacs-lisp
+  (use-package embark
+    :ensure t
+
+    :bind
+    (("C-." . embark-act)         ;; pick some comfortable binding
+     ("C-;" . embark-dwim)        ;; good alternative: M-.
+     ("C-h B" . embark-bindings)) ;; alternative for `describe-bindings'
+
+    :init
+    ;; Optionally replace the key help with a completing-read interface
+    (setq prefix-help-command #'embark-prefix-help-command)
+
+    :config
+    ;; Hide the mode line of the Embark live/completions buffers
+    (add-to-list 'display-buffer-alist
+		 '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
+		   nil
+		   (window-parameters (mode-line-format . none)))))
+
+  ;; Consult users will also want the embark-consult package.
+  (use-package embark-consult
+    :ensure t
+    :after (embark consult)
+    :demand t ; only necessary if you have the hook below
+    ;; if you want to have consult previews as you move around an
+    ;; auto-updating embark collect buffer
+    :hook
+    (embark-collect-mode . consult-preview-at-point-mode))
+#+end_src
+*** helpful
+better help documents
+#+begin_src emacs-lisp
+(use-package helpful
+ :bind
+  ([remap describe-function] . helpful-function)
+  ([remap describe-command] . helpful-command)
+  ([remap describe-variable] . helpful-variable)
+  ([remap describe-key] . helpful-key)
+)
+#+end_src
+*** whichkey
+provides panel-list of possible keys from a leader key
+#+begin_src emacs-lisp
+(use-package which-key
+  :config
+  (which-key-mode))
+#+end_src
+*** org
+Do not tangle roam, noter, and ref in windows under straight. They use a custom pdf-tools which fails to compile.
+**** init
+#+begin_src emacs-lisp
+(use-package org
+  :hook (org-mode . '(visual-line-mode))
+  :bind (("C-c c c" . org-capture))
+  :config
+  (setq org-log-done 'time)
+  (setq org-log-into-drawer t)
+  (setq org-hide-emphasis-markers t)
+  (setq org-src-preserve-indentation t)
+  (setq org-startup-folded 'overview)
+  
+  (setq org-todo-keywords jtw/org-todo-keywords)
+  (setq org-tag-alist jtw/org-tag-alist)
+  (setq org-capture-templates jtw/org-capture-templates)
+  (setq org-refile-use-outline-path t))
+#+end_src
+**** babel
+#+begin_src emacs-lisp
+(setq org-confirm-babel-evaluate nil)
+(setq image-use-external-converter t)
+
+;recipes for ob-{lang}.el
+(use-package ob-typescript)
+(use-package ob-rust)
+
+(org-babel-do-load-languages
+  'org-babel-load-languages
+  '((emacs-lisp . t)
+   (shell . t)
+   (typescript . t)
+   (python . t)
+   (rust . t)))
+   ;(C . t) ;;this enables c, C++, D
+   ;(scheme . t)
+   ;(gnuplot . t)
+   ;(sagemath . t)))
+
+(push '("conf-unix" . conf-unix) org-src-lang-modes)
+
+;; This is needed as of Org 9.2 to use "easy templates"
+;;  else the system is bound to C-c C-,
+
+(push 'org-tempo org-modules)
+
+(add-to-list 'org-structure-template-alist '("sh" . "src shell"))
+(add-to-list 'org-structure-template-alist '("el" . "src emacs-lisp"))
+(add-to-list 'org-structure-template-alist '("ty" . "src typescript"))
+(add-to-list 'org-structure-template-alist '("py" . "src python"))
+(add-to-list 'org-structure-template-alist '("rs" . "src rust"))
+(add-to-list 'org-structure-template-alist '("gp" . "src gnuplot"))
+(add-to-list 'org-structure-template-alist '("sm" . "src sage"))
+(add-to-list 'org-structure-template-alist '("sc" . "src scheme"))
+
+#+end_src
+#+BEGIN_COMMENT
+**** roam
+#+begin_src emacs-lisp
+(add-to-list 'auto-mode-alist '("\\.epub\\'" . nov-mode))
+(setq nov-text-width 80)
+
+(use-package org-roam
+  :ensure t
+  :after org
+  :init
+  (setq org-roam-v2-ack t)
+  :hook
+  (after-init . org-roam-db-autosync-mode)
+  :custom
+  (org-roam-directory "~/.org-data/ztl")
+  (org-roam-capture-templates '(
+  ("d" "default" plain "%?" :target
+  (file+head "%<%Y%m%d%H%M%S>-${slug}.org" "#+title: ${title}\n")
+  :unnarrowed t)))
+  :bind (:map org-roam-db-autosync-mode
+              (("C-c n l" . org-roam)
+               ("C-c n f" . org-roam-find-file)
+               ("C-c n g" . org-roam-graph)
+               ("C-c n c" . org-roam-capture))
+               :map org-mode-map
+               (("C-c n i" . org-roam-insert))
+               (("C-c n I" . org-roam-insert-immediate))))
+
+(add-to-list 'display-buffer-alist
+ '("\\*org-roam\\*"
+  (display-buffer-in-direction)
+  (direction . right)
+  (window-width . 0.33)
+  (window-height . fit-window-to-buffer)))
+#+end_src
+**** noter
+#+begin_src emacs-lisp
+(use-package org-noter
+  :ensure t
+  :after org
+  :custom
+  (org-noter-notes-search-path (list "~/.org-data/lib/notes"))
+  (org-noter-auto-save-last-location t)
+  (org-noter-default-notes-file-names (list "notes.org"))
+  (require 'org-noter-pdftools))
+
+(use-package org-pdftools
+  :hook (org-mode . org-pdftools-setup-link))
+
+(use-package org-noter-pdftools
+  :after org-noter
+  :config
+  ;; Add a function to ensure precise note is inserted
+  (defun org-noter-pdftools-insert-precise-note (&optional toggle-no-questions)
+    (interactive "P")
+    (org-noter--with-valid-session
+     (let ((org-noter-insert-note-no-questions (if toggle-no-questions
+                                                   (not org-noter-insert-note-no-questions)
+                                                 org-noter-insert-note-no-questions))
+           (org-pdftools-use-isearch-link t)
+           (org-pdftools-use-freestyle-annot t))
+       (org-noter-insert-note (org-noter--get-precise-info)))))
+
+  ;; fix https://github.com/weirdNox/org-noter/pull/93/commits/f8349ae7575e599f375de1be6be2d0d5de4e6cbf
+  (defun org-noter-set-start-location (&optional arg)
+    "When opening a session with this document, go to the current location.
+With a prefix ARG, remove start location."
+    (interactive "P")
+    (org-noter--with-valid-session
+     (let ((inhibit-read-only t)
+           (ast (org-noter--parse-root))
+           (location (org-noter--doc-approx-location (when (called-interactively-p 'any) 'interactive))))
+       (with-current-buffer (org-noter--session-notes-buffer session)
+         (org-with-wide-buffer
+          (goto-char (org-element-property :begin ast))
+          (if arg
+              (org-entry-delete nil org-noter-property-note-location)
+            (org-entry-put nil org-noter-property-note-location
+                           (org-noter--pretty-print-location location))))))))
+  (with-eval-after-load 'pdf-annot
+    (add-hook 'pdf-annot-activate-handler-functions #'org-noter-pdftools-jump-to-note)))
+
+#+end_src
+**** ref
+#+begin_src emacs-lisp
+(use-package org-ref
+ :ensure t
+ :after org
+ :init
+ (setq reftex-default-bibliography '("~/.org-data/lib/default.bib"))
+ (setq org-ref-default-bibliography '("~/.org-data/lib/default.bib"))
+ (setq org-ref-pdf-directory '("~/.org-data/lib"))
+ :custom
+ (org-latex-pdf-process
+      '("pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
+	"bibtex %b"
+	"pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
+	"pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"))
+  (org-latex-logfiles-extensions (quote ("lof" "lot" "tex" "aux" "idx" "log" "out" "toc" "nav" "snm" "vrb" "dvi" "fdb_latexmk" "blg" "brf" "fls" "entoc" "ps" "spl" "bbl" "pygtex" "pygstyle"))))
+#+end_src
+
+#+END_COMMENT
+*** perspective
+manage buffer layout
+#+begin_src emacs-lisp
+(use-package perspective
+  :bind (("C-x b" . persp-switch-to-buffer*)
+         ("C-x k" . persp-kill-buffer*))
+  :config
+  (persp-mode))
+#+end_src
+*** projectile
+manage projects, integrates with perspective
+#+begin_src emacs-lisp
+(use-package projectile)
+#+end_src
+
+*** magit+forge
+#+begin_src emacs-lisp
+(use-package magit)
+(use-package forge)
+#+end_src
+*** LSP
+#+begin_src emacs-lisp
+(defun jtw/lsp-mode-setup ()
+  (setq lsp-headerline-breadcrumbs-segments '(path-up-to-project file symbols))
+  (lsp-headerline-breadcrumb-mode))
+
+(use-package lsp-mode
+  :custom
+  (setq lsp-keymap-prefix "C-c l")
+    :hook ((typescript-mode . lsp-deferred)
+    (lsp-mode . jtw/lsp-mode-setup)
+    (lsp-mode . lsp-enable-which-key-integration))
+    :commands (lsp lsp-deferred))
+#+end_src
+*** DAP
+#+begin_src emacs-lisp
+(use-package dap-mode)
+(setq dap-auto-configure-features '(sessions locals controls tooltip))
+(require 'dap-gdb-lldb)
+(dap-gdb-lldb-setup)
+(dap-register-debug-template "Rust::GDB Run Configuration"
+                             (list :type "gdb"
+                                   :request "launch"
+                                   :name "GDB::Run"
+				      :environment-variables '(("RUST_BACKTRACE" . "1"))
+                                   :gdbpath (expand-file-name "~/.cargo/bin/rust-gdb")
+                                   :target "${workspaceFolder}/target/debug/${workspaceFolderBasename}"
+                                   :cwd "${workspaceFolder}"))
+
+#+end_src
+
+*** company
+#+begin_src emacs-lisp
+(use-package company
+  :after lsp-mode
+  :hook (lsp-mode . company-mode)
+  :bind (:map company-active-map
+         ("<tab>" . company-complete-selection))
+        (:map lsp-mode-map
+         ("<tab>" . company-indent-or-complete-common))
+  :custom
+  (company-minimum-prefix-length 1)
+  (company-idle-delay 0.0))
+
+(use-package company-box
+  :hook (company-mode . company-box-mode))
+#+end_src
+*** languages
+**** typescript
+#+begin_src emacs-lisp
+(use-package typescript-mode
+  :mode "\\.ts\\'"
+  :hook (typescript-mode . lsp)
+  :config
+  (setq typescript-indent-level 2)
+  (require 'dap-node)
+  (dap-node-setup))
+
+#+end_src
+**** rust
+#+begin_src emacs-lisp
+(use-package flycheck-rust)
+(use-package rustic)
+#+end_src
+**** c++
+#+begin_src elisp
+(use-package eglot)
+(add-to-list 'eglot-server-programs '((c++-mode c-mode) "clangd"))
+(add-hook 'c-mode-hook 'eglot-ensure)
+(add-hook 'c++-mode-hook 'eglot-ensure)
+#+end_src
+**** python
+#+begin_src emacs-lisp
+(use-package lsp-python-ms
+  :ensure t
+  :init (setq lsp-python-ms-auto-install-server t)
+  :hook (python-mode . (lambda ()
+                          (require 'lsp-python-ms)
+                          (lsp))))
+#+end_src
+**** dhall
+#+begin_src emacs-lisp
+(use-package dhall-mode
+  :ensure t
+  :mode "\\.dhall\\'")
+#+end_src
+**** guile
+#+begin_src emacs-lisp
+;; MSYS2 compile guile 3 binary, only guile 2 available on pacman
+;; (use-package geiser
+;;   :ensure t
+;;   :defer t
+;;   :defines geiser-guile-binary
+;;   :functions geiser-impl--set-buffer-implementation
+;;   :commands (geiser run-geiser)
+;;   :config
+;;   ;; Send the argument of `run-geiser' to
+;;   ;; `geiser-impl--set-buffer-implementation' BEFORE `run-geiser' is
+;;   ;; ran. As I had to set the Scheme implementation by hand otherwise
+;;   ;; with `geiser-set-scheme'
+;;   (advice-add 'run-geiser :before #'geiser-impl--set-buffer-implementation)
+;; (setq geiser-default-implementation 'guile)
+;; (setq geiser-guile-binary "/usr/bin/guile")) ; Use the latest guile
+#+end_src
+
+*** alerts
+#+begin_src emacs-lisp
+(use-package alert
+  :commands (alert)
+  :config (setq alert-default-style 'toast))
+  
+(use-package alert-toast
+  :after alert)
+#+end_src
+*** mu4e
+#+begin_src emacs-lisp
+(add-to-list 'load-path "C:/tools/posix/msys64/usr/share/emacs/site-lisp/mu4e")
+(require 'mu4e)
+ (setq mu4e-change-filenames-when-moving t)
+ (setq mu4e-update-interval (* 6 60))
+ (setq mu4e-mu-binary "C:/tools/posix/msys64/usr/bin/mu.exe")
+ (setq mu4e-get-mail-command "C:/tools/posix/msys64/usr/bin/mbsync -a")
+ (setq mu4e-maildir "~/Mail")
+ (setq mu4e-drafts-folder "/[Gmail].Drafts")
+ (setq mu4e-sent-folder "/[Gmail].Sent Mail")
+ (setq mu4e-refile-folder "/[Gmail].All Mail")
+ (setq mu4e-trash-folder "/[Gmail].Trash")
+ (setq mu4e-maildir-shortcuts
+   '(("/Inbox" . ?i)
+     ("/[Gmail].Sent Mail" . ?s)
+     ("/[Gmail].Trash" . ?t)
+     ("/[Gmail].Drafts" . ?d)
+     ("/[Gmail].All Mail" . ?a)))
+
+#+end_src
